@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <algorithm>
+#include <deque>
 
 DFA::DFA() {
     initialState = new DfaState(0);
@@ -63,79 +64,6 @@ std::vector<std::unordered_set<DfaState*>> DFA::splitPartition(
     return result;
 }
 
-void DFA::minimize() {
-    // Step 1: Initialize partitions P and waiting set W
-    std::unordered_set<DfaState*> finalStatesSet;
-    std::unordered_set<DfaState*> nonFinalStatesSet;
-    
-    for (DfaState* state : allStates) {
-        if (state->isEndOfWord) {
-            finalStatesSet.insert(state);
-        } else {
-            nonFinalStatesSet.insert(state);
-        }
-    }
-    
-    std::vector<std::unordered_set<DfaState*>> P;
-    if (!finalStatesSet.empty()) P.push_back(finalStatesSet);
-    if (!nonFinalStatesSet.empty()) P.push_back(nonFinalStatesSet);
-    
-    std::vector<std::unordered_set<DfaState*>> W = P;
-    
-    while (!W.empty()) {
-        std::unordered_set<DfaState*> A = W.back();
-        W.pop_back();
-        
-        for (char c : alphabet) {
-            // Find states that can reach A with symbol c
-            std::unordered_set<DfaState*> X;
-            for (DfaState* state : allStates) {
-                auto it = state->children.find(c);
-                if (it != state->children.end() && A.find(it->second) != A.end()) {
-                    X.insert(state);
-                }
-            }
-            
-            std::vector<std::unordered_set<DfaState*>> newP;
-            bool partitionChanged = false;
-            
-            for (const auto& Y : P) {
-                auto splits = splitPartition(Y, X);
-                if (splits.size() > 1) { // Split occurred
-                    partitionChanged = true;
-                    for (auto& split : splits) {
-                        newP.push_back(split);
-                        
-                        // Update waiting set W
-                        auto wIt = std::find(W.begin(), W.end(), Y);
-                        if (wIt != W.end()) {
-                            // If Y is in W, replace it with both splits
-                            W.erase(wIt);
-                            W.push_back(splits[0]);
-                            W.push_back(splits[1]);
-                        } else {
-                            // Add smaller split to W
-                            if (splits[0].size() <= splits[1].size()) {
-                                W.push_back(splits[0]);
-                            } else {
-                                W.push_back(splits[1]);
-                            }
-                        }
-                    }
-                } else {
-                    newP.push_back(Y);
-                }
-            }
-            
-            if (partitionChanged) {
-                P = std::move(newP);
-            }
-        }
-    }
-    
-    mergeEquivalentStates(P);
-}
-
 void DFA::mergeEquivalentStates(const std::vector<std::unordered_set<DfaState*>>& P) {
     // Create mapping from states to their representatives
     std::unordered_map<DfaState*, DfaState*> stateMapping;
@@ -188,6 +116,116 @@ void DFA::mergeEquivalentStates(const std::vector<std::unordered_set<DfaState*>>
     for (size_t i = 0; i < allStates.size(); i++) {
         allStates[i]->id = i;
     }
+}
+
+void DFA::buildIncomingTransitions() {
+    incomingTransitions.clear();
+    // Inițializăm map-ul pentru toate stările
+    for (DfaState* state : allStates) {
+        incomingTransitions[state];  // Creates empty map
+    }
+    
+    // Construim tranzițiile inverse
+    for (DfaState* state : allStates) {
+        for (const auto& [symbol, target] : state->children) {
+            incomingTransitions[target][symbol].insert(state);
+        }
+    }
+}
+
+void DFA::minimize() {
+    // Construim tranzițiile inverse pentru optimizare
+    buildIncomingTransitions();
+    
+    // Partitionare inițială: stări finale și non-finale
+    std::unordered_set<DfaState*> finalStatesSet;
+    std::unordered_set<DfaState*> nonFinalStatesSet;
+    
+    for (DfaState* state : allStates) {
+        if (state->isEndOfWord) {
+            finalStatesSet.insert(state);
+        } else {
+            nonFinalStatesSet.insert(state);
+        }
+    }
+    
+    // Folosim un vector pentru P pentru a avea ordine consistentă
+    std::vector<std::unordered_set<DfaState*>> P;
+    if (!finalStatesSet.empty()) P.push_back(std::move(finalStatesSet));
+    if (!nonFinalStatesSet.empty()) P.push_back(std::move(nonFinalStatesSet));
+    
+    // Folosim un deque pentru W pentru operații eficiente la ambele capete
+    std::deque<std::unordered_set<DfaState*>> W(P.begin(), P.end());
+    
+    while (!W.empty()) {
+        std::unordered_set<DfaState*> A = std::move(W.front());
+        W.pop_front();
+        
+        // Pentru fiecare simbol din alfabet
+        for (char c : alphabet) {
+            // Colectăm stările care au tranziții către A cu simbolul c
+            std::unordered_set<DfaState*> X;
+            for (DfaState* state : A) {
+                if (incomingTransitions.count(state) && 
+                    incomingTransitions[state].count(c)) {
+                    X.insert(incomingTransitions[state][c].begin(),
+                            incomingTransitions[state][c].end());
+                }
+            }
+            
+            // Dacă nu am găsit tranziții inverse, continuăm
+            if (X.empty()) continue;
+            
+            std::vector<std::unordered_set<DfaState*>> newP;
+            bool partitionChanged = false;
+            
+            // Pentru fiecare mulțime Y din partițiunea curentă
+            for (const auto& Y : P) {
+                // Calculăm intersecția și diferența
+                std::unordered_set<DfaState*> intersection;
+                std::unordered_set<DfaState*> difference;
+                
+                for (DfaState* state : Y) {
+                    if (X.find(state) != X.end()) {
+                        intersection.insert(state);
+                    } else {
+                        difference.insert(state);
+                    }
+                }
+                
+                // Dacă avem o partiționare reală
+                if (!intersection.empty() && !difference.empty()) {
+                    partitionChanged = true;
+                    newP.push_back(std::move(intersection));
+                    newP.push_back(std::move(difference));
+                    
+                    // Actualizăm W
+                    auto wIt = std::find(W.begin(), W.end(), Y);
+                    if (wIt != W.end()) {
+                        // Dacă Y este în W, înlocuim cu ambele partiții
+                        W.erase(wIt);
+                        W.push_back(newP[newP.size()-2]);  // intersection
+                        W.push_back(newP[newP.size()-1]);  // difference
+                    } else {
+                        // Adăugăm partiția mai mică la W
+                        const auto& smaller = newP[newP.size()-2].size() <= 
+                                            newP[newP.size()-1].size() ? 
+                                            newP[newP.size()-2] : 
+                                            newP[newP.size()-1];
+                        W.push_back(smaller);
+                    }
+                } else {
+                    newP.push_back(Y);
+                }
+            }
+            
+            if (partitionChanged) {
+                P = std::move(newP);
+            }
+        }
+    }
+    
+    mergeEquivalentStates(P);
 }
 
 void DFA::writeToFile(const std::string &filename) const

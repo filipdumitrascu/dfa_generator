@@ -21,7 +21,12 @@ class DFA {
 
     std::vector<DfaState*> allStates;
     std::vector<DfaState*> finalStates;
+
     std::unordered_set<char> alphabet;
+    std::unordered_map<DfaState*,
+                        std::unordered_map<char,
+                            std::unordered_set<DfaState*>>> incomingTransitions;
+
 
     // Helper functions for Hopcroft
     std::vector<std::unordered_set<DfaState*>> splitPartition(
@@ -30,6 +35,8 @@ class DFA {
 
     void mergeEquivalentStates(
         const std::vector<std::unordered_set<DfaState*>>& P);
+
+    void buildIncomingTransitions();
 
  public:
     DFA();
