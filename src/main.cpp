@@ -1,12 +1,15 @@
 #include "dfa.h"
-#include "utils.h"
 
+#include <iostream>
 #include <fstream>
 
 std::pair<std::vector<std::string>, std::vector<std::string>> read_languages()
 {
     std::ifstream file("input.txt");
-    DIE(!file, "Error opening input file!\n");
+    if (!file.is_open()) {
+        std::cerr << "Error: Could't open input file.\n";
+        exit(1);    
+    }
 
     size_t cntAccept{};
     size_t cntFail{};
@@ -18,17 +21,11 @@ std::pair<std::vector<std::string>, std::vector<std::string>> read_languages()
     std::vector<std::string> fail(cntFail);
 
     for (size_t i = 0; i < cntAccept; ++i) {
-        std::string word;
-        file >> word;
-        
-        accept[i] = word;
+        file >> accept[i];
     }
 
     for (size_t i = 0; i < cntFail; ++i) {
-        std::string word;
-        file >> word;
-
-        fail[i] = word;
+        file >> fail[i];
     }
 
     file.close();

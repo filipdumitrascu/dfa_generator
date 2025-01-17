@@ -1,11 +1,11 @@
 #include "dfa.h"
-#include "utils.h"
 
+#include <iostream>
 #include <fstream>
 #include <algorithm>
 
 DFA::DFA() {
-    initialState = new DfaState(1);
+    initialState = new DfaState(0);
     statesCount = 1;
 
     allStates.push_back(initialState);
@@ -23,7 +23,7 @@ void DFA::insertInTrie(const std::string& word) {
         alphabet.insert(c);
 
         if (current->children.find(c) == current->children.end()) {
-            DfaState* newState = new DfaState(++statesCount);
+            DfaState* newState = new DfaState(statesCount++);
             current->children[c] = newState;
             allStates.push_back(newState);
         }
@@ -56,30 +56,39 @@ std::vector<std::unordered_set<DfaState*>> DFA::splitPartition(
         }
     }
     
-    return {std::move(intersection), std::move(difference)};
+    std::vector<std::unordered_set<DfaState*>> result;
+    // Only return non-empty sets
+    if (!intersection.empty()) result.push_back(std::move(intersection));
+    if (!difference.empty()) result.push_back(std::move(difference));
+    return result;
 }
 
 void DFA::minimize() {
-    std::unordered_set<DfaState*> finalStatesSet(finalStates.begin(), finalStates.end());
+    // Step 1: Initialize partitions P and waiting set W
+    std::unordered_set<DfaState*> finalStatesSet;
     std::unordered_set<DfaState*> nonFinalStatesSet;
     
     for (DfaState* state : allStates) {
-        if (!state->isEndOfWord) {
+        if (state->isEndOfWord) {
+            finalStatesSet.insert(state);
+        } else {
             nonFinalStatesSet.insert(state);
         }
     }
     
-    std::vector<std::unordered_set<DfaState*>> P = {finalStatesSet, nonFinalStatesSet};
-    std::vector<std::unordered_set<DfaState*>> W = {finalStatesSet, nonFinalStatesSet};
+    std::vector<std::unordered_set<DfaState*>> P;
+    if (!finalStatesSet.empty()) P.push_back(finalStatesSet);
+    if (!nonFinalStatesSet.empty()) P.push_back(nonFinalStatesSet);
+    
+    std::vector<std::unordered_set<DfaState*>> W = P;
     
     while (!W.empty()) {
-        std::unordered_set<DfaState*> A = std::move(W.back());
+        std::unordered_set<DfaState*> A = W.back();
         W.pop_back();
         
         for (char c : alphabet) {
-            // the set of states for which a transition on c leads to a state in A
+            // Find states that can reach A with symbol c
             std::unordered_set<DfaState*> X;
-
             for (DfaState* state : allStates) {
                 auto it = state->children.find(c);
                 if (it != state->children.end() && A.find(it->second) != A.end()) {
@@ -88,93 +97,94 @@ void DFA::minimize() {
             }
             
             std::vector<std::unordered_set<DfaState*>> newP;
+            bool partitionChanged = false;
             
             for (const auto& Y : P) {
                 auto splits = splitPartition(Y, X);
-                if (!splits[0].empty() && !splits[1].empty()) { // intersec and diff
-                    newP.push_back(std::move(splits[0]));
-                    newP.push_back(std::move(splits[1]));
-                    
-                    auto wIt = std::find(W.begin(), W.end(), Y);
-                    if (wIt != W.end()) {
-                        W.erase(wIt);
-                        W.push_back(std::move(splits[0]));
-                        W.push_back(std::move(splits[1]));
-
-                    } else {
-                        W.push_back(splits[0].size() <= splits[1].size() ? 
-                                  std::move(splits[0]) : std::move(splits[1]));
+                if (splits.size() > 1) { // Split occurred
+                    partitionChanged = true;
+                    for (auto& split : splits) {
+                        newP.push_back(split);
+                        
+                        // Update waiting set W
+                        auto wIt = std::find(W.begin(), W.end(), Y);
+                        if (wIt != W.end()) {
+                            // If Y is in W, replace it with both splits
+                            W.erase(wIt);
+                            W.push_back(splits[0]);
+                            W.push_back(splits[1]);
+                        } else {
+                            // Add smaller split to W
+                            if (splits[0].size() <= splits[1].size()) {
+                                W.push_back(splits[0]);
+                            } else {
+                                W.push_back(splits[1]);
+                            }
+                        }
                     }
                 } else {
                     newP.push_back(Y);
                 }
             }
-
-            P = std::move(newP);
+            
+            if (partitionChanged) {
+                P = std::move(newP);
+            }
         }
     }
-
+    
     mergeEquivalentStates(P);
-}
-
-DfaState* DFA::findRepresentativeState(DfaState* state, 
-                                     const std::vector<std::unordered_set<DfaState*>>& P) {
-    for (const auto& partition : P) {
-        if (partition.find(state) != partition.end()) {
-            return *partition.begin();  // Return the first state in the partition
-        }
-    }
-    return state;
 }
 
 void DFA::mergeEquivalentStates(const std::vector<std::unordered_set<DfaState*>>& P) {
     // Create mapping from states to their representatives
     std::unordered_map<DfaState*, DfaState*> stateMapping;
-    for (DfaState* state : allStates) {
-        stateMapping[state] = findRepresentativeState(state, P);
-    }
-    
-    // Update transitions to use representative states
-    for (DfaState* state : allStates) {
-        std::unordered_map<char, DfaState*> newChildren;
-        for (const auto& transition : state->children) {
-            newChildren[transition.first] = stateMapping[transition.second];
+    for (const auto& partition : P) {
+        DfaState* rep = *partition.begin();
+        for (DfaState* state : partition) {
+            stateMapping[state] = rep;
         }
-        state->children = newChildren;
     }
     
-    // Clean up non-representative states and build new state list
-    std::unordered_set<DfaState*> toDelete;
+    // Create new states list with only representatives
     std::vector<DfaState*> newAllStates;
     std::vector<DfaState*> newFinalStates;
+    std::unordered_set<DfaState*> representatives;
     
-    for (DfaState* state : allStates) {
-        if (stateMapping[state] != state) {
-            // If this is not a representative state, mark for deletion
-            toDelete.insert(state);
-        } else {
-            // This is a representative state - keep it
-            newAllStates.push_back(state);
-            if (state->isEndOfWord) {
-                newFinalStates.push_back(state);
-            }
+    for (const auto& partition : P) {
+        DfaState* rep = *partition.begin();
+        representatives.insert(rep);
+        newAllStates.push_back(rep);
+        if (rep->isEndOfWord) {
+            newFinalStates.push_back(rep);
         }
     }
     
-    // Update the initial state
+    // Update transitions using the mapping
+    for (DfaState* state : representatives) {
+        std::unordered_map<char, DfaState*> newChildren;
+        for (const auto& [symbol, target] : state->children) {
+            newChildren[symbol] = stateMapping[target];
+        }
+        state->children = std::move(newChildren);
+    }
+    
+    // Update initial state
     initialState = stateMapping[initialState];
     
     // Delete non-representative states
-    for (DfaState* state : toDelete) {
-        delete state;
+    for (DfaState* state : allStates) {
+        if (representatives.find(state) == representatives.end()) {
+            delete state;
+        }
     }
     
-    // Update class fields
+    // Update class members
     allStates = std::move(newAllStates);
     finalStates = std::move(newFinalStates);
     statesCount = allStates.size();
     
-    // Reassign IDs sequentially
+    // Reassign IDs
     for (size_t i = 0; i < allStates.size(); i++) {
         allStates[i]->id = i;
     }
@@ -183,7 +193,10 @@ void DFA::mergeEquivalentStates(const std::vector<std::unordered_set<DfaState*>>
 void DFA::writeToFile(const std::string &filename) const
 {
     std::ofstream file(filename);
-    DIE(!file, "Error opening output file!\n");
+    if (!file.is_open()) {
+        std::cerr << "Error: Could't open output file.\n";
+        exit(1);
+    }
 
     file << "dfa\n" << statesCount + 1 << " " << finalStates.size() << " "
          << initialState->id << '\n';
@@ -193,16 +206,14 @@ void DFA::writeToFile(const std::string &filename) const
             file << finalStates[i]->id << " ";
     }
 
-    int dummyState{};
-
-    for (int i = 0; i < 26; ++i) {
-        i == 25 ? file << dummyState << "\n" :
-            file << dummyState << " ";
-    }
+    int dummyState{ statesCount };
 
     for (const auto& state : allStates) {
         for (char c = 'a'; c <= 'z'; ++c) {
-            if (state->children.find(c) != state->children.end()) {
+            if (state->isEndOfWord) {
+                file << state->id;
+            
+            } else if (state->children.find(c) != state->children.end()) {
                 file << state->children[c]->id;                
 
             } else {
@@ -211,6 +222,12 @@ void DFA::writeToFile(const std::string &filename) const
 
             c == 'z' ? file << "\n" : file << " "; 
         }
+    }
+
+
+    for (int i = 0; i < 26; ++i) {
+        i == 25 ? file << dummyState << "\n" :
+            file << dummyState << " ";
     }
 
     file.close();

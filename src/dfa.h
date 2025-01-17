@@ -28,10 +28,6 @@ class DFA {
         const std::unordered_set<DfaState*>& Y, 
         const std::unordered_set<DfaState*>& X);
 
-    DfaState* findRepresentativeState(
-        DfaState* state, 
-        const std::vector<std::unordered_set<DfaState*>>& P);
-
     void mergeEquivalentStates(
         const std::vector<std::unordered_set<DfaState*>>& P);
 
@@ -48,7 +44,7 @@ class DFA {
     // Hopcroft's DFA minimization algorithm.
     void minimize();
 
-    // Displays Dfa to file.
+    // Outputs Dfa to file.
     void writeToFile(const std::string& filename) const;
 };
 
