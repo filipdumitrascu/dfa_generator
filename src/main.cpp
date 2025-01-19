@@ -38,9 +38,8 @@ int main()
     auto [accept, fail] = read_languages();
 
     DFA dfa;
-    dfa.createTrie(accept);
+    dfa.createTrie(accept, fail);
 
-    dfa.minimize();
     dfa.writeToFile("output.txt");
 
     return 0;

@@ -1,5 +1,5 @@
 CC = g++
-CFLAGS = -Wall -Wextra -Wsign-conversion -pedantic-errors -std=c++17 -g
+CFLAGS = -Wall -Wextra -Wsign-conversion -pedantic-errors -std=c++17
 
 build:
 	$(CC) $(CFLAGS) *.cpp -o dfa 

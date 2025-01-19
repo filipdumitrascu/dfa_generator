@@ -6,12 +6,19 @@
 #include <unordered_map>
 #include <unordered_set>
 
+enum WordStatus{
+    ACCEPT,
+    REJECT
+};
+
 struct DfaState {
     int id;
-    bool isEndOfWord;
+    bool canFindAccepted;
+    bool canFindFailed;
     std::unordered_map<char, DfaState*> children;
 
-    DfaState(int _id) : id(_id), isEndOfWord(false) {}
+    DfaState(bool _canFindAccepted, bool _canFindFalse) :
+        id(-1), canFindAccepted(_canFindAccepted), canFindFailed(_canFindFalse) {}
 };
 
 class DFA {
@@ -20,36 +27,17 @@ class DFA {
     DfaState* initialState;
 
     std::vector<DfaState*> allStates;
-    std::vector<DfaState*> finalStates;
 
-    std::unordered_set<char> alphabet;
-    std::unordered_map<DfaState*,
-                        std::unordered_map<char,
-                            std::unordered_set<DfaState*>>> incomingTransitions;
-
-
-    // Helper functions for Hopcroft
-    std::vector<std::unordered_set<DfaState*>> splitPartition(
-        const std::unordered_set<DfaState*>& Y, 
-        const std::unordered_set<DfaState*>& X);
-
-    void mergeEquivalentStates(
-        const std::vector<std::unordered_set<DfaState*>>& P);
-
-    void buildIncomingTransitions();
+    void processTrie();
 
  public:
     DFA();
-    ~DFA();
 
     // Insert letter in trie.
-    void insertInTrie(const std::string& word);
+    void insertInTrie(const std::string& word, WordStatus status);
 
     // Creates trie.
-    void createTrie(std::vector<std::string>& words);
-
-    // Hopcroft's DFA minimization algorithm.
-    void minimize();
+    void createTrie(std::vector<std::string>& accept, std::vector<std::string>& fail);
 
     // Outputs Dfa to file.
     void writeToFile(const std::string& filename) const;

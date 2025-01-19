@@ -2,230 +2,114 @@
 
 #include <iostream>
 #include <fstream>
-#include <algorithm>
-#include <deque>
+#include <queue>
 
-DFA::DFA() {
-    initialState = new DfaState(0);
-    statesCount = 1;
+DFA::DFA()
+{
+    DfaState* rejectState = new DfaState(false, true);
+    rejectState->id = 0;
+    allStates.push_back(rejectState);
 
+    DfaState* finalState = new DfaState(true, false);
+    finalState->id = 1;
+    allStates.push_back(finalState);
+
+    initialState = new DfaState(true, true);
+    initialState->id = 2;
     allStates.push_back(initialState);
+
+    statesCount = 3;
 }
 
-DFA::~DFA() {
-    for (DfaState* state : allStates) {
-        delete state;
-    }
-}
-
-void DFA::insertInTrie(const std::string& word) {
+void DFA::insertInTrie(const std::string& word, WordStatus status)
+{
     DfaState* current = initialState;
     for (char c : word) {
-        alphabet.insert(c);
-
         if (current->children.find(c) == current->children.end()) {
-            DfaState* newState = new DfaState(statesCount++);
-            current->children[c] = newState;
-            allStates.push_back(newState);
+            current->children[c] = new DfaState(false, false);
         }
 
         current = current->children[c];
-    }
 
-    current->isEndOfWord = true;
-    finalStates.push_back(current);
-}
-
-void DFA::createTrie(std::vector<std::string>& words) {
-    for (const std::string& word : words) {
-        insertInTrie(word);
+        status == ACCEPT ? current->canFindAccepted = true : 
+            current->canFindFailed = true;
     }
 }
 
-std::vector<std::unordered_set<DfaState*>> DFA::splitPartition(
-    const std::unordered_set<DfaState*>& Y, 
-    const std::unordered_set<DfaState*>& X) {
+void DFA::processTrie() 
+{
+    // Assigning Id's for the important states
+    std::queue<DfaState*> queue;
+    std::unordered_set<DfaState*> visited;
+    queue.push(initialState);
     
-    std::unordered_set<DfaState*> intersection;
-    std::unordered_set<DfaState*> difference;
-    
-    for (DfaState* state : Y) {
-        if (X.find(state) != X.end()) {
-            intersection.insert(state);
-        } else {
-            difference.insert(state);
-        }
-    }
-    
-    std::vector<std::unordered_set<DfaState*>> result;
-    // Only return non-empty sets
-    if (!intersection.empty()) result.push_back(std::move(intersection));
-    if (!difference.empty()) result.push_back(std::move(difference));
-    return result;
-}
-
-void DFA::mergeEquivalentStates(const std::vector<std::unordered_set<DfaState*>>& P) {
-    // Create mapping from states to their representatives
-    std::unordered_map<DfaState*, DfaState*> stateMapping;
-    for (const auto& partition : P) {
-        DfaState* rep = *partition.begin();
-        for (DfaState* state : partition) {
-            stateMapping[state] = rep;
-        }
-    }
-    
-    // Create new states list with only representatives
-    std::vector<DfaState*> newAllStates;
-    std::vector<DfaState*> newFinalStates;
-    std::unordered_set<DfaState*> representatives;
-    
-    for (const auto& partition : P) {
-        DfaState* rep = *partition.begin();
-        representatives.insert(rep);
-        newAllStates.push_back(rep);
-        if (rep->isEndOfWord) {
-            newFinalStates.push_back(rep);
-        }
-    }
-    
-    // Update transitions using the mapping
-    for (DfaState* state : representatives) {
-        std::unordered_map<char, DfaState*> newChildren;
-        for (const auto& [symbol, target] : state->children) {
-            newChildren[symbol] = stateMapping[target];
-        }
-        state->children = std::move(newChildren);
-    }
-    
-    // Update initial state
-    initialState = stateMapping[initialState];
-    
-    // Delete non-representative states
-    for (DfaState* state : allStates) {
-        if (representatives.find(state) == representatives.end()) {
-            delete state;
-        }
-    }
-    
-    // Update class members
-    allStates = std::move(newAllStates);
-    finalStates = std::move(newFinalStates);
-    statesCount = allStates.size();
-    
-    // Reassign IDs
-    for (size_t i = 0; i < allStates.size(); i++) {
-        allStates[i]->id = i;
-    }
-}
-
-void DFA::buildIncomingTransitions() {
-    incomingTransitions.clear();
-    // Inițializăm map-ul pentru toate stările
-    for (DfaState* state : allStates) {
-        incomingTransitions[state];  // Creates empty map
-    }
-    
-    // Construim tranzițiile inverse
-    for (DfaState* state : allStates) {
-        for (const auto& [symbol, target] : state->children) {
-            incomingTransitions[target][symbol].insert(state);
-        }
-    }
-}
-
-void DFA::minimize() {
-    // Construim tranzițiile inverse pentru optimizare
-    buildIncomingTransitions();
-    
-    // Partitionare inițială: stări finale și non-finale
-    std::unordered_set<DfaState*> finalStatesSet;
-    std::unordered_set<DfaState*> nonFinalStatesSet;
-    
-    for (DfaState* state : allStates) {
-        if (state->isEndOfWord) {
-            finalStatesSet.insert(state);
-        } else {
-            nonFinalStatesSet.insert(state);
-        }
-    }
-    
-    // Folosim un vector pentru P pentru a avea ordine consistentă
-    std::vector<std::unordered_set<DfaState*>> P;
-    if (!finalStatesSet.empty()) P.push_back(std::move(finalStatesSet));
-    if (!nonFinalStatesSet.empty()) P.push_back(std::move(nonFinalStatesSet));
-    
-    // Folosim un deque pentru W pentru operații eficiente la ambele capete
-    std::deque<std::unordered_set<DfaState*>> W(P.begin(), P.end());
-    
-    while (!W.empty()) {
-        std::unordered_set<DfaState*> A = std::move(W.front());
-        W.pop_front();
+    while (!queue.empty()) {
+        DfaState* current = queue.front();
+        queue.pop();
         
-        // Pentru fiecare simbol din alfabet
-        for (char c : alphabet) {
-            // Colectăm stările care au tranziții către A cu simbolul c
-            std::unordered_set<DfaState*> X;
-            for (DfaState* state : A) {
-                if (incomingTransitions.count(state) && 
-                    incomingTransitions[state].count(c)) {
-                    X.insert(incomingTransitions[state][c].begin(),
-                            incomingTransitions[state][c].end());
-                }
+        if (visited.count(current)) {
+            continue;
+        }
+
+        visited.insert(current);
+        
+        for (auto& pair : current->children) {
+            DfaState* child = pair.second;
+            if (child->canFindAccepted && child->canFindFailed && child->id == -1) {
+                child->id = statesCount++;
+                allStates.push_back(child);
             }
+            queue.push(child);
+        }
+    }
+
+    // Cleanup
+    visited.clear();
+    queue.push(initialState);
+    
+    while (!queue.empty()) {
+        DfaState* current = queue.front();
+        queue.pop();
+        
+        if (visited.count(current)) {
+            continue;
+        }
+        visited.insert(current);
+        
+        std::vector<char> chars_to_process;
+        for (const auto& pair : current->children) {
+            chars_to_process.push_back(pair.first);
+        }
+
+        for (char c : chars_to_process) {
+            DfaState* child = current->children[c];
             
-            // Dacă nu am găsit tranziții inverse, continuăm
-            if (X.empty()) continue;
-            
-            std::vector<std::unordered_set<DfaState*>> newP;
-            bool partitionChanged = false;
-            
-            // Pentru fiecare mulțime Y din partițiunea curentă
-            for (const auto& Y : P) {
-                // Calculăm intersecția și diferența
-                std::unordered_set<DfaState*> intersection;
-                std::unordered_set<DfaState*> difference;
-                
-                for (DfaState* state : Y) {
-                    if (X.find(state) != X.end()) {
-                        intersection.insert(state);
-                    } else {
-                        difference.insert(state);
-                    }
-                }
-                
-                // Dacă avem o partiționare reală
-                if (!intersection.empty() && !difference.empty()) {
-                    partitionChanged = true;
-                    newP.push_back(std::move(intersection));
-                    newP.push_back(std::move(difference));
-                    
-                    // Actualizăm W
-                    auto wIt = std::find(W.begin(), W.end(), Y);
-                    if (wIt != W.end()) {
-                        // Dacă Y este în W, înlocuim cu ambele partiții
-                        W.erase(wIt);
-                        W.push_back(newP[newP.size()-2]);  // intersection
-                        W.push_back(newP[newP.size()-1]);  // difference
-                    } else {
-                        // Adăugăm partiția mai mică la W
-                        const auto& smaller = newP[newP.size()-2].size() <= 
-                                            newP[newP.size()-1].size() ? 
-                                            newP[newP.size()-2] : 
-                                            newP[newP.size()-1];
-                        W.push_back(smaller);
-                    }
+            if (child->id == -1) {
+                if (child->canFindAccepted) {
+                    current->children[c] = allStates[1];
                 } else {
-                    newP.push_back(Y);
+                    current->children[c] = allStates[0];
                 }
-            }
-            
-            if (partitionChanged) {
-                P = std::move(newP);
+                
+                delete child;
+            } else {
+                queue.push(child);
             }
         }
     }
-    
-    mergeEquivalentStates(P);
+}
+
+void DFA::createTrie(std::vector<std::string>& accept, std::vector<std::string>& fail)
+{
+    for (const std::string& word : accept) {
+        insertInTrie(word, ACCEPT);
+    }
+
+    for (const std::string& word : fail) {
+        insertInTrie(word, REJECT);
+    }
+
+    processTrie();
 }
 
 void DFA::writeToFile(const std::string &filename) const
@@ -236,36 +120,31 @@ void DFA::writeToFile(const std::string &filename) const
         exit(1);
     }
 
-    file << "dfa\n" << statesCount + 1 << " " << finalStates.size() << " "
-         << initialState->id << '\n';
+    /* only one final state is required and the initial is always 2
+    two more states for the one which accepts and the one which rejects. */
+    file << "dfa\n" << allStates.size() << " 1 2\n";
 
-    for (size_t i = 0; i < finalStates.size(); ++i) {
-        i == finalStates.size() - 1 ? file << finalStates[i]->id << '\n' :
-            file << finalStates[i]->id << " ";
-    }
-
-    int dummyState{ statesCount };
+    file << "1\n";
 
     for (const auto& state : allStates) {
         for (char c = 'a'; c <= 'z'; ++c) {
-            if (state->isEndOfWord) {
-                file << state->id;
-            
-            } else if (state->children.find(c) != state->children.end()) {
-                file << state->children[c]->id;                
+            if (state->children.find(c) != state->children.end()) {
+                if (state->children[c]->canFindAccepted && state->children[c]->canFindFailed) {
+                    file << state->children[c]->id;
+                
+                } else if (state->children[c]->canFindAccepted) {
+                    file << "1";
+
+                } else if (state->children[c]->canFindFailed) {
+                    file << "0";
+                }
 
             } else {
-                file << dummyState;
+                state->id == 1 ? file << "1" : file << "0";
             }
 
             c == 'z' ? file << "\n" : file << " "; 
         }
-    }
-
-
-    for (int i = 0; i < 26; ++i) {
-        i == 25 ? file << dummyState << "\n" :
-            file << dummyState << " ";
     }
 
     file.close();
