@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <queue>
+#include <algorithm>
 
 DFA::DFA()
 {
@@ -110,6 +111,81 @@ void DFA::createTrie(std::vector<std::string>& accept, std::vector<std::string>&
     }
 
     processTrie();
+}
+
+void DFA::minimize()
+{
+    bool changed;
+    do {
+        changed = false;
+        size_t initialStateCount = allStates.size();
+
+        mergeIdenticalStates();
+        
+        if (allStates.size() < initialStateCount) {
+            changed = true;
+        }
+    
+    } while (changed);
+}
+
+void DFA::mergeIdenticalStates()
+{
+    std::unordered_map<std::string, std::vector<DfaState*>> stateGroups;
+
+    for (DfaState* state : allStates) {
+        if (state->id <= 1) {
+            continue;
+        }
+
+        std::string transitionKey;
+        for (char c = 'a'; c <= 'z'; ++c) {
+            auto it = state->children.find(c);
+            if (it != state->children.end()) {
+                transitionKey += std::to_string(it->second->id) + ",";
+            } else {
+                transitionKey += "0,";
+            }
+        }
+
+        transitionKey += "A" + std::to_string(state->canFindAccepted) + 
+                        "F" + std::to_string(state->canFindFailed);
+
+        stateGroups[transitionKey].push_back(state);
+    }
+
+    for (const auto& group : stateGroups) {
+        const auto& states = group.second;
+        if (states.size() <= 1) {
+            continue;
+        }
+
+        DfaState* representative = states[0];
+        for (size_t i = 1; i < states.size(); ++i) {
+            DfaState* stateToMerge = states[i];
+
+            for (DfaState* state : allStates) {
+                for (auto& [c, child] : state->children) {
+                    if (child == stateToMerge) {
+                        child = representative;
+                    }
+                }
+            }
+
+            auto it = std::find(allStates.begin(), allStates.end(), stateToMerge);
+            if (it != allStates.end()) {
+                allStates.erase(it);
+                delete stateToMerge;
+            }
+        }
+    }
+
+    int newId = 0;
+    for (DfaState* state : allStates) {
+        state->id = newId++;
+    }
+
+    statesCount = newId;
 }
 
 void DFA::writeToFile(const std::string &filename) const

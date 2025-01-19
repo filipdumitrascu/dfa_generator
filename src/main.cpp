@@ -40,6 +40,7 @@ int main()
     DFA dfa;
     dfa.createTrie(accept, fail);
 
+    dfa.minimize();
     dfa.writeToFile("output.txt");
 
     return 0;

@@ -29,6 +29,7 @@ class DFA {
     std::vector<DfaState*> allStates;
 
     void processTrie();
+    void mergeIdenticalStates();
 
  public:
     DFA();
@@ -38,6 +39,9 @@ class DFA {
 
     // Creates trie.
     void createTrie(std::vector<std::string>& accept, std::vector<std::string>& fail);
+
+    // Minimize the dfa
+    void minimize();
 
     // Outputs Dfa to file.
     void writeToFile(const std::string& filename) const;
