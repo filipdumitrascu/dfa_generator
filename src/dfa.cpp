@@ -120,8 +120,7 @@ void DFA::writeToFile(const std::string &filename) const
         exit(1);
     }
 
-    /* only one final state is required and the initial is always 2
-    two more states for the one which accepts and the one which rejects. */
+    /* only one final state is required and the initial is always 2 */
     file << "dfa\n" << allStates.size() << " 1 2\n";
 
     file << "1\n";

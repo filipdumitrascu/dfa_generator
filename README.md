@@ -12,6 +12,4 @@ duce cuvantul catre respins sau acceptat simultan, starea initiala, si 2 stari
 inlocuitoare, una finala si una care respinge tot. Practic trie-ul a devenit
 primul cel mai usor de implementat dfa.
 
-3. Dupa stergerea nodurilor pe care le-am evitat la pasul 2, intervin algorimti
-mai complexi in minimzarea numarului de stari al dfa-ului. 
 
